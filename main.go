@@ -19,11 +19,11 @@ func Handle(h *hub.Hub, conn *websocket.Conn, uid uint) {
 		Conn: conn,
 		Uid:  uid,
 		Name: "ScmTble",
-		Send: make(chan string),
+		Send: make(chan *hub.Message),
 	}
 	// 有用户上线时发送广播消息
-	h.Broadcast <- string(hub.NewOnlineMsg(c.Uid))
-	h.Clients[c.Uid] = c
+	h.Broadcast <- hub.NewOnlineMsg(c.Uid)
+	h.Clients.Store(c.Uid, c)
 	go c.ListenMsg()
 	go c.RevMsg()
 }

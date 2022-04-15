@@ -1,17 +1,22 @@
 package hub
 
+import (
+	"chat/log"
+	"go.uber.org/zap"
+	"sync"
+)
+
 // Hub 服务器处理中心
 type Hub struct {
 	// 广播消息通道
-	Broadcast chan string
-
-	Clients map[uint]*Client
+	Broadcast chan *Message
+	// 客户端集合
+	Clients sync.Map
 }
 
 func NewHub() *Hub {
 	return &Hub{
-		Broadcast: make(chan string),
-		Clients:   make(map[uint]*Client),
+		Broadcast: make(chan *Message),
 	}
 }
 
@@ -20,14 +25,24 @@ func (h *Hub) Run() {
 	for {
 		select {
 		case msg := <-h.Broadcast:
-			for _, c := range h.Clients {
-				c.Send <- msg
-			}
+			h.Clients.Range(func(key, value any) bool {
+				client := value.(*Client)
+				client.Send <- msg
+				return true
+			})
 		}
 	}
 }
 
-// Del 删除客户端
+// Del 删除客户端,并关闭连接
 func (h *Hub) Del(uid uint) {
-	delete(h.Clients, uid)
+	value, loaded := h.Clients.LoadAndDelete(uid)
+	if loaded {
+		client := value.(*Client)
+		if err := client.Conn.Close(); err == nil {
+			log.Logger.Debug("断开与客户端连接", zap.Uint("uid", client.Uid))
+		} else {
+			log.Logger.Debug("关闭连接出错", zap.Error(err))
+		}
+	}
 }
