@@ -10,23 +10,21 @@ import (
 
 // Client 每一个连接进来的都是一个Client对象
 type Client struct {
-	// Hub
-	H    *Hub
 	Conn *websocket.Conn
 	Uid  uint
 	Name string
-
 	// 发送给本User的channel
 	Send chan *Message
 }
 
-// ListenMsg 监听改用户管道中是否有消息需要发送
-func (c *Client) ListenMsg() {
+// Write 发送消息给客户端
+func (c *Client) Write() {
 	// 心跳检查
 	ticker := time.NewTicker(time.Second * 3)
 	defer func() {
 		ticker.Stop()
-		c.H.Del(c.Uid)
+		H.UnRegister <- c
+		c.Conn.Close()
 		//log.Logger.Debug("消息处理程序停止", zap.Uint("uid", c.Uid))
 	}()
 	for {
@@ -41,7 +39,7 @@ func (c *Client) ListenMsg() {
 			// 心跳检查(3s)
 			err := c.Conn.WriteMessage(websocket.PingMessage, nil)
 			if err != nil {
-				log.Logger.Error("心跳检查错误", zap.Uint("uid", c.Uid), zap.Error(err))
+				//log.Logger.Error("心跳检查错误", zap.Uint("uid", c.Uid), zap.Error(err))
 				return
 			} else {
 				log.Logger.Debug("心跳检查正常", zap.Uint("uid", c.Uid))
@@ -50,17 +48,18 @@ func (c *Client) ListenMsg() {
 	}
 }
 
-// RevMsg 处理客户端conn发送过来的消息
-func (c *Client) RevMsg() {
+// Read 处理客户端conn发送过来的消息
+func (c *Client) Read() {
 	defer func() {
-		c.H.Del(c.Uid)
+		H.UnRegister <- c
+		c.Conn.Close()
 		//log.Logger.Debug("消息监听程序停止", zap.Uint("uid", c.Uid))
 	}()
 	for {
 		var msg Message
 		err := c.Conn.ReadJSON(&msg)
 		if err != nil {
-			log.Logger.Error("读取客户端conn消息异常", zap.Uint("uid", c.Uid), zap.Error(err))
+			//log.Logger.Error("读取客户端conn消息异常", zap.Uint("uid", c.Uid), zap.Error(err))
 			break
 		}
 		msg.From = c.Uid
@@ -80,8 +79,7 @@ func (c *Client) RevMsg() {
 
 // 发送消息
 func (c *Client) senMsg(msg *Message) error {
-	cc, ok := c.H.Clients.Load(msg.To)
-	client := cc.(*Client)
+	client, ok := H.Clients[msg.To]
 	if !ok {
 		return errors.New("找不到对应的客户端")
 	}

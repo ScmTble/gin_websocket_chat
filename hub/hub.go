@@ -3,20 +3,28 @@ package hub
 import (
 	"chat/log"
 	"go.uber.org/zap"
-	"sync"
 )
+
+var H *Hub
 
 // Hub 服务器处理中心
 type Hub struct {
 	// 广播消息通道
 	Broadcast chan *Message
 	// 客户端集合
-	Clients sync.Map
+	Clients map[uint]*Client
+	// 注册通道
+	Register chan *Client
+	// 离线通道
+	UnRegister chan *Client
 }
 
-func NewHub() *Hub {
-	return &Hub{
-		Broadcast: make(chan *Message),
+func NewHub() {
+	H = &Hub{
+		Broadcast:  make(chan *Message),
+		Clients:    make(map[uint]*Client),
+		Register:   make(chan *Client),
+		UnRegister: make(chan *Client),
 	}
 }
 
@@ -24,25 +32,27 @@ func NewHub() *Hub {
 func (h *Hub) Run() {
 	for {
 		select {
+		// 广播消息
 		case msg := <-h.Broadcast:
-			h.Clients.Range(func(key, value any) bool {
-				client := value.(*Client)
-				client.Send <- msg
-				return true
-			})
+			for _, c := range h.Clients {
+				c.Send <- msg
+			}
+		// 用户连接进来
+		case c := <-h.Register:
+			//log.Logger.Info("新用户连接", zap.Any("uid", c.Uid))
+			h.Clients[c.Uid] = c
+		// 用户离开
+		case c := <-h.UnRegister:
+			h.del(c.Uid)
 		}
 	}
 }
 
 // Del 删除客户端,并关闭连接
-func (h *Hub) Del(uid uint) {
-	value, loaded := h.Clients.LoadAndDelete(uid)
+func (h *Hub) del(uid uint) {
+	_, loaded := h.Clients[uid]
 	if loaded {
-		client := value.(*Client)
-		if err := client.Conn.Close(); err == nil {
-			log.Logger.Debug("断开与客户端连接", zap.Uint("uid", client.Uid))
-		} else {
-			log.Logger.Debug("关闭连接出错", zap.Error(err))
-		}
+		delete(h.Clients, uid)
+		log.Logger.Debug("断开与客户端连接", zap.Uint("uid", uid))
 	}
 }
