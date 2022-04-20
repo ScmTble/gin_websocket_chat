@@ -6,6 +6,7 @@ import (
 	"chat/utils"
 	"github.com/gin-gonic/gin"
 	"net/http"
+	"time"
 )
 
 func UserRegister(c *gin.Context) {
@@ -25,16 +26,11 @@ func WsHandler(c *gin.Context) {
 		return
 	}
 	go func() {
-		c := &hub.Client{
-			Conn: conn,
-			Uid:  uid,
-			Name: "ScmTble",
-			Send: make(chan *hub.Message),
-		}
-		hub.H.Register <- c
-		// 有用户上线时发送广播消息
-		hub.H.Broadcast <- hub.NewOnlineMsg(c.Uid)
-		go c.Read()
-		go c.Write()
+		client := hub.NewClient(conn.RemoteAddr().String(), uid, conn, uint64(time.Now().Unix()))
+
+		go client.Write()
+		go client.Read()
+		// 有用户上线
+		hub.H.Register <- client
 	}()
 }

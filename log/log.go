@@ -26,8 +26,29 @@ func getEncoder() zapcore.Encoder {
 }
 
 func getEncoderConfig() zapcore.EncoderConfig {
-	config := zap.NewProductionEncoderConfig()
-	config.EncodeTime = CustomTimeEncoder
+	zap.NewProductionEncoderConfig()
+	config := zapcore.EncoderConfig{
+		CallerKey:     "caller_line", // 打印文件名和行数
+		LevelKey:      "level_name",
+		MessageKey:    "msg",
+		TimeKey:       "ts",
+		StacktraceKey: "stacktrace",
+		LineEnding:    zapcore.DefaultLineEnding,
+		// 自定义时间格式
+		EncodeTime: func(t time.Time, encoder zapcore.PrimitiveArrayEncoder) {
+			encoder.AppendString("[" + t.Format("2006/01/02 15:04:05.000") + "]")
+		},
+		// loglevel 大写编码器
+		EncodeLevel: func(level zapcore.Level, encoder zapcore.PrimitiveArrayEncoder) {
+			encoder.AppendString("[" + level.CapitalString() + "]")
+		},
+		// 全路径编码器
+		EncodeCaller: func(caller zapcore.EntryCaller, encoder zapcore.PrimitiveArrayEncoder) {
+			encoder.AppendString(caller.TrimmedPath())
+		},
+		EncodeDuration: zapcore.SecondsDurationEncoder,
+		EncodeName:     zapcore.FullNameEncoder,
+	}
 	return config
 }
 
@@ -37,9 +58,4 @@ func getWriteSyncer() zapcore.WriteSyncer {
 	//	return nil
 	//}
 	return zapcore.AddSync(os.Stdout)
-}
-
-// CustomTimeEncoder 自定义日志输出时间格式
-func CustomTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
-	enc.AppendString(t.Format("2006/01/02 15:04:05.000"))
 }

@@ -14,31 +14,29 @@ const (
 	OnlineMsg MsgType = 3
 )
 
+// Message 消息格式
 type Message struct {
-	Type MsgType `json:"type"`
-	Msg  string  `json:"msg"`
-	From uint    `json:"from"`
-	To   uint    `json:"to"`
+	MsgType MsgType `json:"type"`    //消息类型
+	Message string  `json:"message"` //要发送的内容
+	UserID  string  `json:"userID"`  //对方id
 }
 
 // NewTextMsg 创建一条消息
-func NewTextMsg(msg string, to uint, from uint) *Message {
+func NewTextMsg(msg string, userID string) *Message {
 	m := &Message{
-		Type: TextMsg,
-		Msg:  msg,
-		From: from,
-		To:   to,
+		MsgType: TextMsg,
+		Message: msg,
+		UserID:  userID,
 	}
 	return m
 }
 
 // NewNoteMsg 创建一条通知消息
-func NewNoteMsg(msg string) *Message {
+func NewNoteMsg(msg string, uid string) *Message {
 	m := &Message{
-		Type: NoteMsg,
-		Msg:  msg,
-		From: 0,
-		To:   0,
+		MsgType: NoteMsg,
+		Message: msg,
+		UserID:  uid,
 	}
 	return m
 }
@@ -46,10 +44,9 @@ func NewNoteMsg(msg string) *Message {
 // NewOnlineMsg 创建上线消息
 func NewOnlineMsg(uid uint) *Message {
 	m := &Message{
-		Type: OnlineMsg,
-		Msg:  fmt.Sprintf("用户 %d 上线", uid),
-		From: 0,
-		To:   uid,
+		MsgType: OnlineMsg,
+		Message: fmt.Sprintf("用户 %d 上线", uid),
+		UserID:  "",
 	}
 	return m
 }

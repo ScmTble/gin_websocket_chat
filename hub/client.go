@@ -2,87 +2,88 @@ package hub
 
 import (
 	"chat/log"
-	"errors"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
-	"time"
+	"runtime/debug"
 )
 
 // Client 每一个连接进来的都是一个Client对象
+// 用户连接
 type Client struct {
-	Conn *websocket.Conn
-	Uid  uint
-	Name string
-	// 发送给本User的channel
-	Send chan *Message
+	Addr          string          // 客户端地址
+	Socket        *websocket.Conn // 用户连接
+	Send          chan *Message   // 待发送的数据
+	AppId         uint32          // 登录的平台Id app/web/ios
+	UserId        string          // 用户Id，用户登录以后才有
+	FirstTime     uint64          // 首次连接事件
+	HeartbeatTime uint64          // 用户上次心跳时间
+	LoginTime     uint64          // 登录时间 登录以后才有
+}
+
+// NewClient 初始化
+func NewClient(addr string, uid string, socket *websocket.Conn, firstTime uint64) (client *Client) {
+	client = &Client{
+		Addr:          addr,
+		Socket:        socket,
+		Send:          make(chan *Message, 100),
+		UserId:        uid,
+		FirstTime:     firstTime,
+		HeartbeatTime: firstTime,
+	}
+
+	return
 }
 
 // Write 发送消息给客户端
 func (c *Client) Write() {
-	// 心跳检查
-	ticker := time.NewTicker(time.Second * 3)
+	// panic捕获
 	defer func() {
-		ticker.Stop()
+		if a := recover(); a != nil {
+			log.Logger.Error("write stop", zap.String("msg", string(debug.Stack())))
+		}
+	}()
+	defer func() {
 		H.UnRegister <- c
-		c.Conn.Close()
-		//log.Logger.Debug("消息处理程序停止", zap.Uint("uid", c.Uid))
+		c.Socket.Close()
 	}()
 	for {
 		select {
-		case msg := <-c.Send:
-			// 当有消息到达时
-			log.Logger.Debug("用户管道收到消息", zap.Uint("uid", c.Uid), zap.Any("msg", msg))
-			if err := c.Conn.WriteJSON(msg); err != nil {
+		case message, ok := <-c.Send:
+			if !ok {
+				// c.Send 数据为空，并关闭了
+				log.Logger.Info("client发送数据 关闭连接", zap.String("uid", c.UserId))
 				return
 			}
-		case <-ticker.C:
-			// 心跳检查(3s)
-			err := c.Conn.WriteMessage(websocket.PingMessage, nil)
-			if err != nil {
-				//log.Logger.Error("心跳检查错误", zap.Uint("uid", c.Uid), zap.Error(err))
-				return
-			} else {
-				log.Logger.Debug("心跳检查正常", zap.Uint("uid", c.Uid))
-			}
+			c.Socket.WriteJSON(message)
 		}
 	}
 }
 
-// Read 处理客户端conn发送过来的消息
+// read 处理客户端conn发送过来的消息
 func (c *Client) Read() {
+	// panic捕获
 	defer func() {
-		H.UnRegister <- c
-		c.Conn.Close()
-		//log.Logger.Debug("消息监听程序停止", zap.Uint("uid", c.Uid))
+		if a := recover(); a != nil {
+			log.Logger.Error("read stop", zap.String("msg", string(debug.Stack())))
+		}
+	}()
+	defer func() {
+		// 关闭接收通道
+		close(c.Send)
 	}()
 	for {
 		var msg Message
-		err := c.Conn.ReadJSON(&msg)
+		err := c.Socket.ReadJSON(&msg)
 		if err != nil {
-			//log.Logger.Error("读取客户端conn消息异常", zap.Uint("uid", c.Uid), zap.Error(err))
-			break
+			log.Logger.Error("读取客户端conn消息异常", zap.String("uid", c.UserId), zap.Error(err))
+			return
 		}
-		msg.From = c.Uid
-		log.Logger.Debug("接收到客户端conn发来的消息", zap.Uint("uid", c.Uid), zap.Any("msg", msg))
-		if err = c.senMsg(&msg); err != nil {
-			log.Logger.Error("发送消息异常", zap.Error(err))
-			if err := c.Conn.WriteJSON(NewNoteMsg("消息发送失败!")); err != nil {
-				return
-			}
-		} else {
-			if err := c.Conn.WriteJSON(NewNoteMsg("消息发送成功!")); err != nil {
-				return
-			}
-		}
+		log.Logger.Debug("接收到客户端conn发来的消息", zap.String("uid", c.UserId), zap.Any("msg", msg))
+		ProcessData(c, &msg)
 	}
 }
 
-// 发送消息
-func (c *Client) senMsg(msg *Message) error {
-	client, ok := H.Clients[msg.To]
-	if !ok {
-		return errors.New("找不到对应的客户端")
-	}
-	client.Send <- NewTextMsg(msg.Msg, msg.To, msg.From)
-	return nil
+// ProcessData 消息处理
+func ProcessData(c *Client, msg *Message) {
+	return
 }
